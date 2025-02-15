@@ -1,0 +1,11 @@
+datasets
+torch
+torchvision
+ipykernel
+ipywidgets
+IProgress
+tqdm
+numpy
+pandas
+matplotlib
+opencv-python
