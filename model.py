@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch
 import torch.nn as nn
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
 class UNetDown(nn.Module):
     def __init__(self, in_size, out_size, normalize=True, dropout=0.0):
         super(UNetDown, self).__init__()
@@ -21,22 +26,21 @@ class UNetDown(nn.Module):
 class UNetUp(nn.Module):
     def __init__(self, in_size, out_size, dropout=0.0):
         super(UNetUp, self).__init__()
-        layers = [
+        self.up = nn.Sequential(
             nn.ConvTranspose2d(in_size, out_size, 4, 2, 1, bias=False),
             nn.InstanceNorm2d(out_size),
             nn.ReLU(inplace=True),
-        ]
+        )
         if dropout:
-            layers.append(nn.Dropout(dropout))
-
-        self.model = nn.Sequential(*layers)
+            self.up.add_module("dropout", nn.Dropout(dropout))
 
     def forward(self, x, skip_input):
-        x = self.model(x)
+        x = self.up(x)
+        # Проверяем размеры и обрезаем, если необходимо
+        if x.size() != skip_input.size():
+            x = F.interpolate(x, size=skip_input.size()[2:], mode='bilinear', align_corners=False)
         x = torch.cat((x, skip_input), 1)
-
         return x
-    
 
 
 class GeneratorUNet(nn.Module):
@@ -57,9 +61,7 @@ class GeneratorUNet(nn.Module):
         self.up5 = UNetUp(256, 64)
 
         self.final = nn.Sequential(
-            nn.Upsample(scale_factor=2),
-            nn.ZeroPad2d((1, 0, 1, 0)),
-            nn.Conv2d(128, out_channels, 4, padding=1),
+            nn.ConvTranspose2d(128, out_channels, 4, stride=2, padding=1),  # Исправлено
             nn.Tanh(),
         )
 
@@ -85,10 +87,9 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
 
         def discriminator_block(in_filters, out_filters, normalization=True):
-            """Возвращает слои блока дискриминатора с дропаутом"""
+            """Возвращает слои блока дискриминатора"""
             layers = [
                 nn.Conv2d(in_filters, out_filters, 4, stride=2, padding=1),
-                nn.Dropout2d(0.3)  # Добавлен дропаут
             ]
             if normalization:
                 layers.append(nn.InstanceNorm2d(out_filters))
@@ -96,21 +97,21 @@ class Discriminator(nn.Module):
             return layers
 
         self.model = nn.Sequential(
-            # Убрали один блок (было 4 блока, осталось 3)
             *discriminator_block(in_channels * 2, 64, normalization=False),
             *discriminator_block(64, 128),
-            *discriminator_block(128, 256),  # Последний блок остался с 256 фильтрами
-            
+            *discriminator_block(128, 256),
+            *discriminator_block(256, 512),
+
             # Финализирующие слои
             nn.ZeroPad2d((1, 0, 1, 0)),
-            nn.Conv2d(256, 1, 4, padding=1, bias=False),  # Изменили вход с 512 на 256
-            nn.Sigmoid()  # Сохранили сигмоиду
+            nn.Conv2d(512, 1, 4, padding=1, bias=False),
+            nn.Sigmoid()
         )
 
     def forward(self, img_A, img_B):
         img_input = torch.cat((img_A, img_B), 1)
         return self.model(img_input)
-    
+
 
 if __name__ == "__main__":
     generator = GeneratorUNet()

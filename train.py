@@ -1,15 +1,14 @@
-import datetime
 from datasets import load_dataset
 import torch
-from model import GeneratorUNet, Discriminator
-from generator import generate_image_with_text
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from dataset import TextImageDataset
-from torch.autograd import Variable
-import torch.optim as optim
-import torch.nn as nn
 
+from dataset import TextImageDataset
+from model import GeneratorUNet, Discriminator
 
 hf_dataset = load_dataset('priyank-m/MJSynth_text_recognition', split='train[:10%]', cache_dir='./datasets')
 
@@ -20,7 +19,7 @@ IMAGE_CHANNELS = 3
 BATCH_SIZE = 512
 NUM_EPOCHS = 100
 LEARNING_RATE_G = 0.0002
-LEARNING_RATE_D = 0.0001
+LEARNING_RATE_D = 0.0002
 BETAS = (0.5, 0.999)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,8 +45,6 @@ optimizer_D = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE_D, betas=B
 
 adversarial_loss = nn.BCELoss()
 
-from torchvision.utils import save_image
-
 import time
 prev_time = time.time()
 
@@ -56,9 +53,21 @@ lambda_pixel = 100  # Гиперпараметр, регулирующий вл�
 
 freeze_d_every = 10
 
+from torch.autograd import Variable
+from torchvision.utils import save_image
+import time
+import datetime
+
 for epoch in range(NUM_EPOCHS):
-    try:
-        for i, (generated_imgs, real_imgs) in enumerate(dataloader):
+    for i, batch in enumerate(dataloader):
+        try:
+            # Проверяем, что батч содержит данные
+            if batch is None:
+                print(f"[Epoch {epoch}/{NUM_EPOCHS}] [Batch {i}/{len(dataloader)}] Skipping empty batch.")
+                continue
+
+            # Распаковываем батч
+            generated_imgs, real_imgs = batch
 
             batch_size = real_imgs.shape[0]
 
@@ -71,7 +80,7 @@ for epoch in range(NUM_EPOCHS):
             fake = torch.zeros_like(discriminator(generated_imgs, real_imgs), requires_grad=False).to(DEVICE)
 
             # -----------------
-            #  Train Generator 
+            #  Train Generator
             # -----------------
             optimizer_G.zero_grad()
 
@@ -128,11 +137,13 @@ for epoch in range(NUM_EPOCHS):
             if batches_done % 1000 == 0:
                 save_image(gen_imgs.data[:25], f"images/generated_{epoch}_{batches_done}.png", nrow=5, normalize=True)
                 save_image(real_imgs.data[:25], f"images/real_{epoch}_{batches_done}.png",  nrow=5, normalize=True)
-    
-    # некоторые изображения в датасете повреждены
-    except Exception as e:
-        pass
 
+        except Exception as e:
+            # Логируем ошибку и продолжаем обучение
+            print(f"[Epoch {epoch}/{NUM_EPOCHS}] [Batch {i}/{len(dataloader)}] Error: {e}")
+            continue
+
+    # Сохранение моделей каждые 10 эпох
     if epoch % 10 == 0:
         torch.save(generator.state_dict(), f"saved_models/generator_{epoch}.pth")
         torch.save(discriminator.state_dict(), f"saved_models/discriminator_{epoch}.pth")
