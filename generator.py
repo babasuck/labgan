@@ -1,6 +1,4 @@
 # код для генерации изображений с текстом по середине
-
-import cv2
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
@@ -18,7 +16,7 @@ def generate_image_with_text(
     Если текст не влезает, он расширяется влево и вправо от центра.
     """
     # Создаем случайный фон в режиме RGB
-    random_noise = np.random.randint(0, 256, (h, w, 3), dtype=np.uint8)
+    random_noise = np.ones((h, w, 3), dtype=np.uint8) * 255
     img = Image.fromarray(random_noise, mode='RGB')
     img_draw = ImageDraw.Draw(img)
 
